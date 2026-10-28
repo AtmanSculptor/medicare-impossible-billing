@@ -46,11 +46,12 @@ from read_csv_auto('{path}', all_varchar=true)
 
 
 def csv_for(data_dir, year):
-    """Path of the CSV for a year, or None. Accepts dYY.csv or any *DYY_Prov_Svc*.csv."""
+    """Path of the CSV for a year, or None. Accepts dYY.csv, dYY.csv.gz or any *DYY_Prov_Svc*.csv."""
     yy = f"{year % 100:02d}"
-    p = os.path.join(data_dir, f"d{yy}.csv")
-    if os.path.exists(p):
-        return p
+    for name in (f"d{yy}.csv", f"d{yy}.csv.gz"):
+        p = os.path.join(data_dir, name)
+        if os.path.exists(p):
+            return p
     hits = glob.glob(os.path.join(data_dir, f"*D{yy}_Prov_Svc*.csv"))
     return hits[0] if hits else None
 
@@ -58,7 +59,7 @@ def csv_for(data_dir, year):
 def load_year(con, year, path):
     yy = f"{year % 100:02d}"
     con.execute(YEAR_SQL.format(yy=yy, path=path.replace("'", "''")))
-    n, total = con.execute(f"select count(*), round(sum(srv*pay)/1e9, 2) from y{yy}").fetchone()
+    n, total = con.execute(f"select count(*), round(sum(srv*pay)/1e9, 2) from y{yy}").fetchall()[0]
     print(f"  y{yy}: {n:,} rows, ${total}B paid  ({os.path.basename(path)})")
 
 
@@ -81,8 +82,8 @@ def derive(con, year):
         con.execute(f"""create or replace table csprev as select code, count(*) n from
             (select npi, code from y{p1} where ent='I' group by npi, code) group by code
             having count(*)>={MIN_BILLERS}""")
-    n_pr = con.execute("select count(*) from pr").fetchone()[0]
-    n_cs = con.execute("select count(*) from cs").fetchone()[0]
+    n_pr = con.execute("select count(*) from pr").fetchall()[0][0]
+    n_cs = con.execute("select count(*) from cs").fetchall()[0][0]
     print(f"  pr: {n_pr:,} provider-code rows; cs: {n_cs:,} codes with {MIN_BILLERS}+ billers")
 
 

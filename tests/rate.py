@@ -44,4 +44,4 @@ def run(con, min_paid=MIN_PAID):
 
 def eligible(con):
     """Provider-code pairs the test could have flagged (denominator for sanity checks)."""
-    return con.execute(f"select count(*) from pr join cs using(code) where cs.med <= {MAX_CODE_MEDIAN}").fetchone()[0]
+    return con.execute(f"select count(*) from pr join cs using(code) where cs.med <= {MAX_CODE_MEDIAN}").fetchall()[0][0]

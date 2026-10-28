@@ -11,7 +11,7 @@ def prior_tables(con):
 
 
 def has_table(con, name):
-    return bool(con.execute("select count(*) from information_schema.tables where table_name=?", [name]).fetchone()[0])
+    return bool(con.execute("select count(*) from information_schema.tables where table_name=?", [name]).fetchall()[0][0])
 
 
 def history_columns(con, df):

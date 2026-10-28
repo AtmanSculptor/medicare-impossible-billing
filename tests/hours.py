@@ -58,7 +58,7 @@ def run(con, min_hours=HIGH_HOURS):
         select 'H' test, pr.npi, any_value(pr.name) name, any_value(pr.cred) cred, any_value(pr.typ) typ,
                any_value(pr.loc) loc, any_value(pr.st) st,
                arg_max(pr.code, pr.srv*t.minutes) code,
-               sum(pr.srv) timed_srv, sum(pr.srv*t.minutes)/60.0 hours, sum(pr.paid) paid
+               sum(pr.srv) timed_srv, sum(pr.srv*t.minutes)/60.0 as hours, sum(pr.paid) as paid
         from pr join timed_df t using(code)
         group by pr.npi
         having sum(pr.srv*t.minutes)/60.0 >= {float(min_hours)}
@@ -77,7 +77,7 @@ def real_control(con):
     """
     con.register("psy_df", _timed_frame(PSYCHOTHERAPY_MINUTES))
     top = con.execute("""select max(h) from (select sum(pr.srv*t.minutes)/60.0 h
-                         from pr join psy_df t using(code) group by pr.npi)""").fetchone()[0]
+                         from pr join psy_df t using(code) group by pr.npi)""").fetchall()[0][0]
     con.unregister("psy_df")
     if top is None:
         return False, "no psychotherapy rows in this database"
