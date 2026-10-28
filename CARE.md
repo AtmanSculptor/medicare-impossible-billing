@@ -31,7 +31,10 @@ every flag, one of these is the answer.
 **Test H, floor hours**
 - One NPI shared by a practice of many therapists.
 - Group sessions or add-on codes billed under rules the minimum-time table
-  does not model.
+  does not model. The floors use the least time each code allows (for
+  example 30 minutes for 90839, which CPT reports for 30 to 74), but the
+  table is a judgment and can be wrong for a code. Check it against the
+  current CPT definition.
 - A supervising psychologist or physician billing for the work of several
   clinicians.
 
@@ -48,8 +51,15 @@ every flag, one of these is the answer.
 - A newly covered or newly popular service.
 
 **Test C, services per patient-day**
-- A day-of-service convention for that code, a facility census day, or a
-  prolonged-service add-on.
+- Accelerated transcranial magnetic stimulation (90868). Some protocols give
+  about ten sessions a day, which lands right on the threshold.
+- Per-unit add-on codes, billed once per extra block of time, so many per
+  patient-day is how they work: 99292 (critical care, each added 30 minutes),
+  99417 and 99418 (prolonged visit), 99358 and 99359 (prolonged
+  non-face-to-face service), 90833, 90836 and 90838 (psychotherapy add-ons) and
+  90840 (crisis, each added 30 minutes). Test C leaves these out, but a code
+  missing from that list can still look like this.
+- A day-of-service convention for that code, or a facility census day.
 - A typo in the patient-day count.
 
 ## The checklist
@@ -117,10 +127,17 @@ yourself. Do not call it fraud: say what the file shows and what it does not.
   from billing software, from someone else using a number, and from fraud. Only
   an investigation can tell them apart.
 
-## Why NPI columns are blank by default
+## What the default report hides, and what it does not
 
-`report.py` leaves the NPI column empty and drops the city unless you ask with
-`--show-npi`, and it never writes a provider's name at all. This is on purpose. A report with an identifier on every row
-gets forwarded without the caveats above. Counts, codes, amounts and states are enough to
-see whether the method works. Reveal identifiers only when you are ready to follow a row
-through this checklist.
+`report.py` leaves the NPI column empty, drops the city, rounds paid amounts to
+the nearest $10,000, and never writes a provider's name. Use `--show-npi` to
+turn the first three off.
+
+Be clear about what that buys. Blanking the NPI stops casual forwarding: nobody
+can paste a row into an email and have it name someone. It does **not** stop
+re-identification. Every row still carries a state, a specialty, a code and
+exact service and patient counts, and those can be matched back to the public
+CMS file, which holds the NPI and name, in one lookup. Treat the default report
+as sensitive. Do not post it, and do not forward it without this file. The
+counts in the README are safe to share because they carry no attributes; rows
+are not.
