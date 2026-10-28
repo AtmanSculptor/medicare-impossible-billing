@@ -89,6 +89,7 @@ def derive(con, year):
 
 
 def build(data_dir, db, year, memory_limit=None):
+    os.makedirs(os.path.dirname(os.path.abspath(db)), exist_ok=True)
     con = duckdb.connect(db)
     if memory_limit:
         con.execute(f"set memory_limit='{memory_limit}'")
