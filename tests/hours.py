@@ -35,7 +35,7 @@ IMPOSSIBLE_HOURS = 8760
 PSYCHOTHERAPY_MINUTES = {
     "90832": 16, "90834": 38, "90837": 53,      # individual psychotherapy (16-37, 38-52, 53+ minutes)
     "90833": 16, "90836": 38, "90838": 53,      # add-ons to an E/M visit, same time bands
-    "90839": 60, "90840": 30,                   # crisis psychotherapy: first 60 minutes, each added 30
+    "90839": 30, "90840": 30,                   # crisis psychotherapy: 90839 covers 30 to 74 minutes, 90840 each added 30
     "90846": 26, "90847": 26,                   # family psychotherapy, 50 minutes (midpoint rule)
 }
 OTHER_TIMED_MINUTES = {
