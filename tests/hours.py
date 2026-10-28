@@ -82,3 +82,12 @@ def real_control(con):
     if top is None:
         return False, "no psychotherapy rows in this database"
     return top > IMPOSSIBLE_HOURS, f"top psychotherapy biller: {top:,.0f} floor hours (needs > {IMPOSSIBLE_HOURS:,})"
+
+
+def count_psychotherapy(con, min_hours=HIGH_HOURS):
+    """Providers whose psychotherapy codes alone (no physical therapy or counseling) reach min_hours."""
+    con.register("psy_df", _timed_frame(PSYCHOTHERAPY_MINUTES))
+    n = con.execute(f"""select count(*) from (select pr.npi from pr join psy_df t using(code) group by pr.npi
+                        having sum(pr.srv*t.minutes)/60.0 >= {float(min_hours)})""").fetchall()[0][0]
+    con.unregister("psy_df")
+    return n

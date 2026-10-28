@@ -18,88 +18,11 @@ import os
 import random
 import tempfile
 
-import duckdb
-import pandas as pd
 import pytest
 
-import build
-
-from . import from_nothing, hours, make_sample, per_day, rate
-
-SAMPLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample")
-PLANTED = make_sample.PLANTED_NPI
-DYNAMIC_NPI = "0999999983"   # the second planted provider, inserted by plant()
-TESTS = {"H": hours, "A": rate, "B": from_nothing, "C": per_day}
-
-
-# ---------------------------------------------------------------- helpers used by tests and report.py
-
-def load_sample(npis=None):
-    """In-memory database built from the shipped sample by the same code the real data uses."""
-    con = duckdb.connect(":memory:")
-    for year in (2022, 2023, 2024):
-        build.load_year(con, year, build.csv_for(SAMPLE_DIR, year))
-    if npis is not None:   # keep only these individual providers (subsample), organizations stay
-        con.register("keep_df", pd.DataFrame({"npi": sorted(npis)}))
-        for y in ("y22", "y23", "y24"):
-            con.execute(f"delete from {y} where ent='I' and npi not in (select npi from keep_df)")
-    build.derive(con, 2024)
-    return con
-
-
-def run_all(con):
-    """{'H': df, 'A': df, 'B': df, 'C': df}"""
-    return {name: mod.run(con) for name, mod in TESTS.items()}
-
-
-def flagged_npis(results):
-    return set().union(*(set(df["npi"]) for df in results.values()))
-
-
-def _insert_pr(con, npi, code, benes, srv, bdays, paid):
-    con.execute("insert into pr values (?, ?, 'planted', 'Planted Provider', 'MD', 'Internal Medicine', "
-                "'Nowhere XX', 'XX', ?, ?, ?, ?)", [npi, code, benes, srv, bdays, paid])
-
-
-def plant(con, npi=DYNAMIC_NPI):
-    """Insert one impossible provider into pr. Codes are chosen from the codes this database knows.
-
-    Returns {test: code} for the row built to trip each test. Call inside a transaction
-    and roll it back, so the database is left as it was.
-    """
-    rows = con.execute("""select cs.code, cs.med, cs.p99 from cs join csprev using(code)
-                          where cs.med <= 1.15 order by cs.n desc limit 1""").fetchall()
-    r = rows[0] if rows else None
-    if r is None:
-        raise RuntimeError("no once-per-patient code with 200+ billers in both years; cannot plant a rate row")
-    rate_code, med, p99 = r
-    n = con.execute("select code from csprev where code <> ? order by n desc limit 1", [rate_code]).fetchall()[0][0]
-    per_patient = max(5 * med, p99) * 3 + 5
-    _insert_pr(con, npi, "90837", 300, 12000, 12000, 1_500_000)             # H: 10,600 floor hours
-    _insert_pr(con, npi, rate_code, 100, round(per_patient * 100), round(per_patient * 100), 150_000)   # A
-    _insert_pr(con, npi, n, 100, 1000, 1000, 300_000)                       # B: no row last year
-    _insert_pr(con, npi, "99308", 200, 3000, 250, 210_000)                  # C: 12 per patient-day
-    return {"H": "90837", "A": rate_code, "B": n, "C": "99308"}
-
-
-def found(results, npi, codes):
-    """{test: bool}: did each test flag this NPI (and, where it has one, the expected code)?"""
-    out = {}
-    for name, df in results.items():
-        rows = df[df["npi"] == npi]
-        out[name] = bool(len(rows)) and (name == "H" or bool((rows["code"] == codes[name]).any()))
-    return out
-
-
-def check_planted(con):
-    """Insert a planted provider, run all tests, roll back. Returns (ok, {test: bool}, detail)."""
-    con.execute("begin")
-    try:
-        codes = plant(con)
-        res = found(run_all(con), DYNAMIC_NPI, codes)
-    finally:
-        con.execute("rollback")
-    return all(res.values()), res, codes
+from . import hours, make_sample
+from .planted import (DYNAMIC_NPI, PLANTED, SAMPLE_DIR, check_planted, flagged_npis, found, load_sample,
+                      plant, run_all, insert_pr)
 
 
 # ---------------------------------------------------------------- pytest: the shipped sample
@@ -207,10 +130,10 @@ def test_just_below_each_threshold_is_not_flagged(con):
         n = "0999999975"
         r = con.execute("select med, p99 from cs where code = ?", [codes["A"]]).fetchall()[0]
         under_rate = max(5 * r[0], r[1]) * 0.95                       # just under the 5x / p99 line
-        _insert_pr(con, n, "90837", 300, 8000, 8000, 240_000)          # 7,067 hours: high, not impossible
-        _insert_pr(con, n, codes["A"], 100, round(under_rate * 100), round(under_rate * 100), 150_000)
-        _insert_pr(con, n, codes["B"], 100, 1000, 1000, 249_999)       # one dollar under the B line
-        _insert_pr(con, n, "99308", 200, 2475, 250, 210_000)           # 9.9 per patient-day
+        insert_pr(con, n, "90837", 300, 8000, 8000, 240_000)          # 7,067 hours: high, not impossible
+        insert_pr(con, n, codes["A"], 100, round(under_rate * 100), round(under_rate * 100), 150_000)
+        insert_pr(con, n, codes["B"], 100, 1000, 1000, 249_999)       # one dollar under the B line
+        insert_pr(con, n, "99308", 200, 2475, 250, 210_000)           # 9.9 per patient-day
         res = run_all(con)
         mine = {k: v[v["npi"] == n] for k, v in res.items()}
         assert mine["H"].iloc[0]["tier"] == "high"                      # over 2,500 hours, under 8,760

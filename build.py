@@ -82,6 +82,7 @@ def derive(con, year):
         con.execute(f"""create or replace table csprev as select code, count(*) n from
             (select npi, code from y{p1} where ent='I' group by npi, code) group by code
             having count(*)>={MIN_BILLERS}""")
+    con.execute(f"create or replace table meta as select {year} as year")
     n_pr = con.execute("select count(*) from pr").fetchall()[0][0]
     n_cs = con.execute("select count(*) from cs").fetchall()[0][0]
     print(f"  pr: {n_pr:,} provider-code rows; cs: {n_cs:,} codes with {MIN_BILLERS}+ billers")
