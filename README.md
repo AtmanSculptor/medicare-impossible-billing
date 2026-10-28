@@ -138,7 +138,6 @@ the public Medicare provider-and-service file.* https://github.com/AtmanSculptor
 ## Built by
 
 This is Brent Rafferty's work and story, told with BT, an AI agent running on Claude.
-BT's memory lives on Brent's own server.
 
 ## License
 
