@@ -41,7 +41,9 @@ FALLBACK_URLS = {
 # SHA-256 of the files the README counts were measured on. CMS can republish a
 # year with corrections; a mismatch is a warning, not an error, unless --strict.
 REFERENCE_SHA256 = {
-    # filled in by the maintainer, see REFERENCE_SHA256 note in README
+    2022: "915eef8d6f099af5c5f0a91aa4931d184502d07c1e3dfbd275498cc7e485c5bc",
+    2023: "c6766dda7c66c74682af892d9ed5f8a347248dc0f6be2bda8aee7eecc02a902b",
+    2024: "509dc7ce4cd02d8dd160d50d33ce5d942cd120ea306ff1eb2b6ece4f59cb2c23",
 }
 
 
