@@ -4,8 +4,8 @@ Logic
     For a code that normally happens about once per patient per year (an
     MRI, a colonoscopy, an EEG), the national median of services per patient is
     about 1. A provider who bills the same patients for the same code many
-    times over is doing something the rest of the country is not. Money
-    hides in volume inside allowed codes, not only in odd codes.
+    times over is doing something the rest of the country is not. That can
+    matter even on ordinary, allowed codes, not only on odd ones.
 
     For each code with 200+ individual billers, compute the national median and
     99th percentile of (services / patients) across providers.

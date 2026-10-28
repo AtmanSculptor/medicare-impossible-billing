@@ -1,9 +1,10 @@
 """Test B: a large payment on a provider-code pair that did not exist the year before.
 
 Logic
-    Legitimate practices grow gradually. A provider-code pair that paid
+    Practices usually grow gradually. A provider-code pair that paid
     $250,000 or more this year and had no row at all last year went from nothing
-    to a large amount in one step. Scheme billing often looks like this.
+    to a large amount in one step. That is unusual, and it has many ordinary
+    explanations (listed below and in CARE.md).
 
     Only codes that were already established are tested: the code needs 200+
     individual billers the year before. Otherwise every provider who started
