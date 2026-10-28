@@ -134,7 +134,12 @@ def test_just_below_each_threshold_is_not_flagged(con):
         insert_pr(con, n, codes["A"], 100, round(under_rate * 100), round(under_rate * 100), 150_000)
         insert_pr(con, n, codes["B"], 100, 1000, 1000, 249_999)       # one dollar under the B line
         insert_pr(con, n, "99308", 200, 2475, 250, 210_000)           # 9.9 per patient-day
+        low = "0999999967"   # 2,499.8 floor hours: just under the 2,500 line, so H must not list it
+        insert_pr(con, low, "90837", 300, 2830, 2830, 100_000)
+        assert 2830 * 53 / 60 < hours.HIGH_HOURS <= 2831 * 53 / 60   # 2,499.8 vs 2,500.8: one service apart
         res = run_all(con)
+        assert low not in set(res["H"]["npi"]), "2,499.8 hours must be under the H line"
+        assert len(res["H"][res["H"]["npi"] == n]) == 1
         mine = {k: v[v["npi"] == n] for k, v in res.items()}
         assert mine["H"].iloc[0]["tier"] == "high"                      # over 2,500 hours, under 8,760
         assert len(mine["A"]) == 0 and len(mine["B"]) == 0 and len(mine["C"]) == 0
@@ -142,6 +147,36 @@ def test_just_below_each_threshold_is_not_flagged(con):
         con.execute("rollback")
 
 
+def test_per_day_ignores_addon_codes(con):
+    """Per-unit add-on codes repeat on one day by design, so test C must not list them."""
+    con.execute("begin")
+    try:
+        con.execute("delete from pr where npi = ?", [PLANTED])
+        n = "0999999959"
+        insert_pr(con, n, "99292", 100, 3000, 250, 500_000)   # critical care, each added 30 minutes
+        insert_pr(con, n, "99417", 100, 3000, 250, 500_000)   # prolonged visit, each 15 minutes
+        assert n not in set(run_all(con)["C"]["npi"])
+        insert_pr(con, n, "99308", 100, 3000, 250, 500_000)   # an ordinary visit code at the same ratio is listed
+        assert n in set(run_all(con)["C"]["npi"])
+    finally:
+        con.execute("rollback")
+
+
 def test_hours_data_control_on_sample(con):
     ok, detail = hours.real_control(con)
     assert ok, detail
+
+
+def test_report_refuses_to_write_when_planted_check_cannot_run(tmp_path, monkeypatch):
+    """A read-only database means the planted-row check cannot run, so report.py must exit and write nothing."""
+    import duckdb
+    import build
+    import report
+    db = str(tmp_path / "ro.duckdb")
+    build.build(SAMPLE_DIR, db, 2024).close()
+    monkeypatch.setattr(report, "connect", lambda path: (duckdb.connect(path, read_only=True), False))
+    out = tmp_path / "out" / "report.md"
+    with pytest.raises(SystemExit) as e:
+        report.main(["--db", db, "--out", str(out)])
+    assert "planted-row check cannot run" in str(e.value)
+    assert not out.exists()
