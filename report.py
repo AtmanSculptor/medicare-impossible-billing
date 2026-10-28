@@ -9,12 +9,12 @@ Why NPI columns are blank by default
     A flag is a question, not an accusation. Most flags have an innocent reading
     (CARE.md lists them), and a report that carries a name or an NPI gets
     forwarded without the caveats. So by default the NPI column is empty, the
-    city is dropped (specialty plus city plus code can identify one person in a
-    small town) and this program never writes a provider's name at all. The
-    counts, the codes, the amounts and the states are enough to judge whether
-    the method works. When you are ready to follow a row up, --show-npi fills in
-    the NPI and city, and you look the rest up at the source (NPPES, the state
-    license board) and work through CARE.md before anyone is named.
+    city is dropped, paid amounts are rounded to the nearest $10,000, and this
+    program never writes a provider's name. That stops casual forwarding. It does
+    NOT stop re-identification: state, specialty, code and the service counts can
+    be matched back to the public CMS file. Treat the default report as sensitive
+    anyway. When you are ready to follow a row up, --show-npi fills in the NPI,
+    city and exact amounts, and you work through CARE.md before anyone is named.
 
 Known-family tags
     Some code families already have a large, public explanation (skin
@@ -22,9 +22,11 @@ Known-family tags
     Those rows stay in the report but are tagged and listed last, so they do not
     bury the rest. A tag is not an excuse; read CARE.md.
 
-The report refuses to run if a control is missing: the planted impossible
-provider must be found by every test, and the top psychotherapy biller of the
-year must exceed 8,760 floor hours. If either fails, the method broke.
+The report refuses to run if the planted-row check cannot run or fails: the
+planted impossible provider must be found by every test. A second check, that
+the top psychotherapy biller of the year exceeds 8,760 floor hours, is a
+calibration check only. If it fails, the report is still written, with a warning
+that says so, because a method must be free to report that nobody is impossible.
 """
 import argparse
 import datetime
@@ -55,6 +57,11 @@ def money(x):
     return "" if pd.isna(x) else f"${x:,.0f}"
 
 
+def coarse(x):
+    """Paid amount rounded to the nearest $10,000 (default output)."""
+    return "" if pd.isna(x) else f"~${round(x / 10_000) * 10_000:,.0f}"
+
+
 def num(x, digits=0):
     return "" if pd.isna(x) else f"{x:,.{digits}f}"
 
@@ -72,6 +79,7 @@ def md_table(df):
 def tidy(df, test, show_npi):
     """Pick and format the columns for one test's table. NPI blank, no name, no city unless shown."""
     out = pd.DataFrame(index=df.index)
+    paid_fmt = money if show_npi else coarse
     out["npi"] = df["npi"] if show_npi else ""
     out["state"] = df["st"]
     if show_npi:
@@ -82,19 +90,19 @@ def tidy(df, test, show_npi):
         out["timed_services"] = df["timed_srv"].map(num)
         out["floor_hours"] = df["hours"].map(num)
         out["tier"] = df["tier"]
-        out["paid"] = df["paid"].map(money)
+        out["paid"] = df["paid"].map(paid_fmt)
     else:
         out["description"] = df["dsc"].fillna("").str.slice(0, 40)
         out["patients"] = df["benes"].map(num)
         out["services"] = df["srv"].map(num)
-        out["paid"] = df["paid"].map(money)
+        out["paid"] = df["paid"].map(paid_fmt)
         if test == "A":
             out["per_patient"] = df["per_patient"]
             out["code_median"] = df["med"]
             out["x_median"] = df["ratio"]
         if test == "B":
-            out["paid_prev_yr"] = df["paid_prev"].fillna(0).map(money)
-            out["paid_2yr_ago"] = df["paid_prev2"].fillna(0).map(money)
+            out["paid_prev_yr"] = df["paid_prev"].fillna(0).map(paid_fmt)
+            out["paid_2yr_ago"] = df["paid_prev2"].fillna(0).map(paid_fmt)
         if test == "C":
             out["patient_days"] = df["bdays"].map(num)
             out["per_day"] = df["per_day"]
@@ -121,8 +129,6 @@ def main(argv=None):
     ap.add_argument("--out", default="out/report.md")
     ap.add_argument("--top", type=int, default=25, help="rows per table (default 25)")
     ap.add_argument("--show-npi", action="store_true", help="fill in the NPI and city columns")
-    ap.add_argument("--skip-data-control", action="store_true",
-                    help="do not require the psychotherapy control (use for a year where it may not hold)")
     a = ap.parse_args(argv)
     if not os.path.exists(a.db):
         sys.exit(f"{a.db} not found. Run: python build.py")
@@ -130,24 +136,31 @@ def main(argv=None):
     has_meta = con.execute("select count(*) from information_schema.tables where table_name='meta'").fetchall()[0][0]
     year = con.execute("select year from meta").fetchall()[0][0] if has_meta else "?"
 
-    # ---- controls: stop if the method cannot find what it must find
-    controls = []
-    if writable:
+    # ---- controls: the planted-row check must run and pass; the data check only calibrates
+    if not writable:
+        sys.exit("STOP: the database is open read-only (or locked), so the planted-row check cannot run. "
+                 "No report written. Close other programs using the file, or copy it and point --db at the copy.")
+    try:
         ok, res, codes = planted.check_planted(con)
-        controls.append(("planted impossible provider found by every test", ok,
-                         ", ".join(f"{k} {'found' if v else 'MISSED'} ({codes[k]})" for k, v in res.items())))
-    else:
-        controls.append(("planted impossible provider found by every test", None, "skipped: database is read-only"))
+    except Exception as e:  # noqa: BLE001 - any failure to run the check means we cannot vouch for the tests
+        sys.exit(f"STOP: the planted-row check could not run ({e}). No report written.")
+    detail = ", ".join(f"{k} {'found' if v else 'MISSED'} ({codes[k]})" for k, v in res.items())
+    print("CONTROL", "ok     " if ok else "MISSING", "planted impossible provider found by every test |", detail)
+    if not ok:
+        sys.exit("STOP: the planted-row control failed, so the method is broken for this data. No report written.")
     hok, hdetail = hours.real_control(con)
-    controls.append(("top psychotherapy biller exceeds 8,760 floor hours", hok if not a.skip_data_control else None,
-                     hdetail if not a.skip_data_control else "skipped by request"))
-    for name, ok, detail in controls:
-        print("CONTROL", "ok     " if ok else ("skipped" if ok is None else "MISSING"), name, "|", detail)
-    if any(ok is False for _, ok, _ in controls):
-        sys.exit("STOP: a control failed, so the method is broken for this data. No report written.")
+    calib = "ok" if hok else "WARNING"
+    print("CALIBRATION", calib, "top psychotherapy biller vs 8,760 floor hours |", hdetail)
+    controls = [("planted impossible provider found by every test", "ok", detail),
+                ("calibration: top psychotherapy biller vs 8,760 floor hours (warning only)", calib, hdetail)]
+    notes = []
+    if not hok:
+        notes.append("Calibration warning: no psychotherapy biller exceeds 8,760 floor hours in this data. "
+                     "That is a result, not an error. It may mean the data is clean at the top, or that the "
+                     "floors do not fit this year. Nothing was stopped.")
 
     # ---- the four tests
-    results, notes = {}, []
+    results = {}
     for name, mod in planted.TESTS.items():
         try:
             df = mod.run(con)
@@ -166,19 +179,19 @@ def main(argv=None):
     w = []
     w.append(f"# Report: Medicare by Provider and Service, {year}\n")
     w.append(f"Written {datetime.date.today().isoformat()} from `{os.path.basename(a.db)}`. "
-             f"NPI and city columns are {'SHOWN' if a.show_npi else 'blank'}; names are never written.\n")
+             f"NPI, city and exact amounts are {'SHOWN' if a.show_npi else 'hidden (NPI blank, city dropped, paid rounded to $10,000)'}; names are never written. "
+             f"Hidden is not anonymous: state, specialty, code and counts can be matched to the public file.\n")
     w.append("> A flag is a question, not an accusation. Every row below has innocent readings "
              "(shared billing numbers, supervised staff, new practices, data errors). Read CARE.md before anyone is named.\n")
     w.append("## Controls\n")
-    w.append(md_table(pd.DataFrame([(n, {True: "ok", False: "MISSING", None: "skipped"}[o], d) for n, o, d in controls],
-                                   columns=["control", "result", "detail"])))
+    w.append(md_table(pd.DataFrame(controls, columns=["control", "result", "detail"])))
     w.append("## Counts\n")
     rows = []
     if "H" in results:
         h = results["H"]
-        rows.append(("H hours", "providers with floor hours >= 2,500", len(h), "", money(h["paid"].sum())))
-        rows.append(("H hours", "providers with floor hours > 8,760 (more than a year has)", int((h["tier"] == "impossible").sum()), "", ""))
-        rows.append(("H hours", "providers over 2,500 hours on psychotherapy codes alone", hours.count_psychotherapy(con), "", ""))
+        rows.append(("H hours", "NPIs (billing numbers) with floor hours >= 2,500", len(h), "", money(h["paid"].sum())))
+        rows.append(("H hours", "NPIs with floor hours > 8,760 (more than a year has)", int((h["tier"] == "impossible").sum()), "", ""))
+        rows.append(("H hours", "NPIs over 2,500 hours on psychotherapy codes alone", hours.count_psychotherapy(con), "", ""))
     labels = {"A": "A rate: provider-code pairs", "B": "B from nothing: provider-code pairs", "C": "C per day: provider-code pairs"}
     for k in ("A", "B", "C"):
         if k in results:
